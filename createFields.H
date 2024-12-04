@@ -1,0 +1,120 @@
+#include "readGravitationalAcceleration.H"
+
+Info<< "Reading field U\n" << endl;
+volVectorField U
+(
+    IOobject
+    (
+        "U",
+        runTime.timeName(),
+        mesh,
+        IOobject::MUST_READ,
+        IOobject::AUTO_WRITE
+    ),
+    mesh
+);
+
+#include "createPhi.H"
+
+singlePhaseTransportModel laminarTransport(U, phi);
+
+dimensionedScalar rhoInfValue
+(
+    "rhoInf",
+    dimDensity,
+    laminarTransport
+);
+
+volScalarField rhoInf
+(
+    IOobject
+    (
+        "rho",
+        runTime.timeName(),
+        mesh,
+        IOobject::NO_READ,
+        IOobject::AUTO_WRITE
+    ),
+    mesh,
+    rhoInfValue
+);
+
+autoPtr<incompressible::turbulenceModel> turbulence
+(
+    incompressible::turbulenceModel::New(U, phi, laminarTransport)
+);
+
+volScalarField mu
+(
+    IOobject
+    (
+        "mu",
+        runTime.timeName(),
+        mesh,
+        IOobject::NO_READ,
+        IOobject::AUTO_WRITE
+    ),
+    laminarTransport.nu()*rhoInfValue
+);
+
+const label nClouds = args.getOrDefault<label>("nClouds", 15);  // Number of clouds
+
+PtrList<basicKinematicCollidingCloud> kinematicClouds(nClouds);
+
+for (label i = 0; i < nClouds; i++)
+{
+    word kinematicCloudName = "kinematicCloud" + Foam::name(i + 1); // Cloud names: kinematicCloud1, kinematicCloud2, etc.
+    
+    Info<< "Constructing " << kinematicCloudName << endl;
+
+    kinematicClouds.set
+    (
+        i,
+        new basicKinematicCollidingCloud
+        (
+            kinematicCloudName,
+            rhoInf,
+            U,
+            mu,
+            g
+        )
+    );
+}
+
+IOobject Hheader
+(
+    "H",
+    runTime.timeName(),
+    mesh,
+    IOobject::MUST_READ,
+    IOobject::AUTO_WRITE
+);
+
+autoPtr<volVectorField> HPtr;
+
+if (Hheader.typeHeaderOk<volVectorField>(true))
+{
+    Info<< "\nReading field H\n" << endl;
+
+    HPtr.reset(new volVectorField (Hheader, mesh));
+}
+
+IOobject HdotGradHheader
+(
+    "HdotGradH",
+    runTime.timeName(),
+    mesh,
+    IOobject::MUST_READ,
+    IOobject::AUTO_WRITE
+);
+
+autoPtr<volVectorField> HdotGradHPtr;
+
+if (HdotGradHheader.typeHeaderOk<volVectorField>(true))
+{
+    Info<< "Reading field HdotGradH" << endl;
+
+    HdotGradHPtr.reset(new volVectorField(HdotGradHheader, mesh));
+}
+
+#include "createNonInertialFrameFields.H"
